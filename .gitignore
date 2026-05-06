@@ -1,0 +1,32 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local assistant/editor state
+.claude/
+
+# Virtual environment
+.venv/
+
+# Secrets
+.env
+
+# Local caches
+.cache/
+
+# Generated indexes and results
+index/*
+!index/.gitkeep
+results/runs/*
+!results/runs/.gitkeep
+results/evals/*
+!results/evals/.gitkeep
+
+# Local raw/processed data can be large or private
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
