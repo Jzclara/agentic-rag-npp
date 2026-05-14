@@ -13,3 +13,18 @@ def retrieve(retriever, query: str) -> list[NodeWithScore]:
 def get_contexts(nodes: list[NodeWithScore]) -> list[str]:
     # 把 NodeWithScore 列表转成纯文本列表，方便传给 LLM 和 Ragas 评估
     return [node.node.text for node in nodes]
+
+def get_sources(nodes: list[NodeWithScore]) -> list[dict]:
+    sources = []
+
+    for node in nodes:
+        metadata = node.node.metadata
+        sources.append(
+            {
+                "file_name": metadata.get("file_name", "unknown file"),
+                "page_label": metadata.get("page_label", "unknown page"),
+                "score": node.score,
+            }
+        )
+
+    return sources
