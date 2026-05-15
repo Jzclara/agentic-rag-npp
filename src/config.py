@@ -16,15 +16,21 @@ def resolve_project_path(path_value: str) -> str:
 
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai-compatible")
 
-ZHIPU_API_KEY = os.getenv("ZHIPU_API_KEY")
-ZHIPU_BASE_URL = os.getenv("ZHIPU_BASE_URL")
-ZHIPU_MODEL = os.getenv("ZHIPU_MODEL", "glm-4-flash")
-ZHIPU_EMBEDDING_MODEL = os.getenv("ZHIPU_EMBEDDING_MODEL", "embedding-3")
+# 旧的 provider 配置，已不再使用，保留仅供参考
+# ZHIPU_API_KEY = os.getenv("ZHIPU_API_KEY")
+# ZHIPU_BASE_URL = os.getenv("ZHIPU_BASE_URL")
+# ZHIPU_MODEL = os.getenv("ZHIPU_MODEL", "glm-4-flash")
+# ZHIPU_EMBEDDING_MODEL = os.getenv("ZHIPU_EMBEDDING_MODEL", "embedding-3")
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
-OPENAI_EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+# OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+# OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL")
+# OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+# OPENAI_EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+
+# 当前使用 DeepSeek openai-compatible 配置
+LLM_API_KEY = os.getenv("LLM_API_KEY")
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.deepseek.com")
+LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-v4-flash")
 
 # 通用 OpenAI-compatible LLM 配置。
 # 推荐新配置使用 LLM_*；旧的 ZHIPU_* / OPENAI_* 变量仍保留，避免已有 .env 失效。
