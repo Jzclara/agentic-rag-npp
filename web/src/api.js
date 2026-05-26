@@ -42,6 +42,42 @@ export async function fetchEvals() {
   return r.json();
 }
 
+export async function fetchConfig() {
+  const r = await fetch(`${BASE}/config`);
+  if (!r.ok) throw new Error(`fetchConfig ${r.status}`);
+  return r.json();
+}
+
+// ── 聊天记录持久化 ──
+
+export async function fetchChats() {
+  const r = await fetch(`${BASE}/chats`);
+  if (!r.ok) throw new Error(`fetchChats ${r.status}`);
+  return r.json();
+}
+
+export async function loadChat(chatId) {
+  const r = await fetch(`${BASE}/chats/${encodeURIComponent(chatId)}`);
+  if (!r.ok) throw new Error(`loadChat ${r.status}`);
+  return r.json();
+}
+
+export async function saveChat(chatId, title, messages) {
+  const r = await fetch(`${BASE}/chats/save`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, title, messages }),
+  });
+  if (!r.ok) throw new Error(`saveChat ${r.status}`);
+  return r.json();
+}
+
+export async function deleteChat(chatId) {
+  const r = await fetch(`${BASE}/chats/${encodeURIComponent(chatId)}`, { method: 'DELETE' });
+  if (!r.ok) throw new Error(`deleteChat ${r.status}`);
+  return r.json();
+}
+
 export async function fetchPapers() {
   const r = await fetch(`${BASE}/papers`);
   if (!r.ok) throw new Error(`fetchPapers ${r.status}`);

@@ -10,7 +10,7 @@ import {
 } from './components/tweaks/TweaksPanel.jsx';
 import { PAPERS } from './data.js';
 
-import { fetchPapers, chatStream } from './api.js';
+import { fetchPapers, chatStream, fetchChats, loadChat, saveChat, deleteChat } from './api.js';
 
 const TWEAK_DEFAULTS = {
   theme: 'cream',
@@ -46,22 +46,66 @@ export default function App() {
   const [liveStage, setLiveStage] = useState('');
   const [liveTrace, setLiveTrace] = useState([]);
   const [inspectorTab, setInspectorTab] = useState('trace');
-  // 从实际消息中生成"最近对话"列表：取第一条用户消息作为标题
-  const chats = useMemo(() => {
-    const firstUser = messages.find(m => m.role === 'user');
-    if (!firstUser) return [];
-    return [{ id: 'current', title: firstUser.text, active: true }];
+
+  // ── 多会话管理 ──
+  const [chatId, setChatId] = useState(() => 'chat-' + Date.now());
+  const [chatList, setChatList] = useState([]);
+
+  // 当前对话的标题：取第一条用户消息
+  const chatTitle = useMemo(() => {
+    const first = messages.find(m => m.role === 'user');
+    return first ? first.text : '';
   }, [messages]);
+
+  // 启动时：从后端加载对话列表，如果有上次的对话则恢复
+  useEffect(() => {
+    // 从 localStorage 读取上次的 chatId
+    const lastId = localStorage.getItem('rag_current_chat_id');
+
+    fetchChats()
+      .then(data => {
+        setChatList(data.chats || []);
+        // 如果有上次打开的对话，自动恢复
+        if (lastId && (data.chats || []).some(c => c.id === lastId)) {
+          loadChat(lastId).then(chatData => {
+            setChatId(lastId);
+            setMessages(chatData.messages || []);
+          });
+        }
+      })
+      .catch(() => {
+        // 后端没启动时，尝试从 localStorage 恢复
+        const cached = localStorage.getItem('rag_messages');
+        if (cached) {
+          try { setMessages(JSON.parse(cached)); } catch {}
+        }
+      });
+  }, []);
+
+  // messages 变化时：写 localStorage + 保存到后端
+  const saveTimerRef = useRef(null);
+  useEffect(() => {
+    // 立即写 localStorage（刷新不丢）
+    localStorage.setItem('rag_messages', JSON.stringify(messages));
+    localStorage.setItem('rag_current_chat_id', chatId);
+
+    // 防抖保存到后端（避免每条消息都请求）
+    if (messages.length > 0) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => {
+        saveChat(chatId, chatTitle, messages)
+          .then(() => {
+            // 保存成功后刷新对话列表
+            fetchChats().then(data => setChatList(data.chats || [])).catch(() => {});
+          })
+          .catch(() => {});
+      }, 500);
+    }
+  }, [messages, chatId]);
+
   const [focusedMessage, setFocusedMessage] = useState(null);
   const [focusedCite, setFocusedCite] = useState(null);
   const threadRef = useRef(null);
-
-  // 接入后端时把这一段解开注释，启动时从 /api/papers 拉真实文献列表
-  // useEffect(() => {
-  //   fetchPapers().then(setPapers).catch(err => {
-  //     console.warn('[fetchPapers failed, using local sample data]', err);
-  //   });
-  // }, []);
 
   // 把每条 assistant 消息绑回前一条 user 消息（给 Inspector 的"原始问题"用）
   const messagesWithUser = useMemo(() => {
@@ -108,9 +152,20 @@ export default function App() {
         (evt) => {
           if (evt.type === 'node_start') {
             setLiveStage(evt.name);
-            setLiveTrace(prev => [...prev, { name: evt.name }]);
+            setLiveTrace(prev => [...prev, { name: evt.name, pending: true }]);
           } else if (evt.type === 'node_done') {
             traceNodes.push(evt);
+            // 把 liveTrace 里对应的 pending 节点替换为完整的 node_done 数据
+            setLiveTrace(prev => {
+              const updated = [...prev];
+              const idx = updated.findIndex(n => n.name === evt.name && n.pending);
+              if (idx >= 0) {
+                updated[idx] = evt;
+              } else {
+                updated.push(evt);
+              }
+              return updated;
+            });
           } else if (evt.type === 'answer') {
             answerParts = evt.parts;
             sources = evt.sources;
@@ -141,9 +196,35 @@ export default function App() {
     }
   };
 
+  // 切换到已有对话
+  const switchChat = (id) => {
+    if (id === chatId) return;
+    loadChat(id)
+      .then(data => {
+        setChatId(id);
+        setMessages(data.messages || []);
+        setFocusedMessage(null);
+      })
+      .catch(err => console.error('加载对话失败', err));
+  };
+
+  // 新建对话
   const newChat = () => {
-    if (!confirm('开始新的对话？（演示）')) return;
+    const newId = 'chat-' + Date.now();
+    setChatId(newId);
     setMessages([]);
+    setFocusedMessage(null);
+  };
+
+  // 删除对话
+  const handleDeleteChat = (id) => {
+    deleteChat(id)
+      .then(() => {
+        setChatList(prev => prev.filter(c => c.id !== id));
+        // 如果删的是当前对话，新建一个
+        if (id === chatId) newChat();
+      })
+      .catch(err => console.error('删除失败', err));
   };
 
   /* Tweaks 面板：默认隐藏，点击顶栏的设置图标打开 */
@@ -173,8 +254,10 @@ export default function App() {
       </header>
 
       <Sidebar papers={papers} setPapers={setPapers}
-               chats={chats}
-               onNewChat={newChat} />
+               chats={chatList} activeChatId={chatId}
+               onNewChat={newChat}
+               onSwitchChat={switchChat}
+               onDeleteChat={handleDeleteChat} />
 
       <div className="main">
         <div className="thread-bar">
@@ -207,7 +290,10 @@ export default function App() {
                    setFocusedNum={setFocusedCite}
                    activePaperCount={activePaperCount}
                    tab={inspectorTab}
-                   setTab={setInspectorTab} />
+                   setTab={setInspectorTab}
+                   busy={busy}
+                   liveTrace={liveTrace}
+                   liveStage={liveStage} />
       )}
 
       <TweaksPanel title="Tweaks">

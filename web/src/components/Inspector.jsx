@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { PAPERS, SOURCES_BY_KEY } from '../data.js';
-import { fetchEvals } from '../api.js';
+import { fetchEvals, fetchConfig } from '../api.js';
+import { PdfViewer } from './PdfViewer.jsx';
 
 function AgentTraceView({ message }) {
   const t = message.trace;
@@ -80,8 +81,23 @@ function AgentTraceView({ message }) {
   );
 }
 
+/* 来源弹窗：直接显示 PDF 原文并高亮匹配文本 */
+function SourceModal({ source, onClose }) {
+  return (
+    <PdfViewer
+      fileName={source.fileName}
+      page={source.page}
+      onClose={onClose}
+      highlightText={source.full_text || source.quote}
+      sourceInfo={source}
+    />
+  );
+}
+
 function SourcesView({ message, focusedNum, setFocusedNum }) {
   const sources = (message && (SOURCES_BY_KEY[message.sourcesKey] || message.sources)) || [];
+  const [selectedSource, setSelectedSource] = useState(null);
+
   if (!sources.length) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 32 }}>暂无引用来源。</div>;
 
   return (
@@ -94,7 +110,11 @@ function SourcesView({ message, focusedNum, setFocusedNum }) {
           <div key={s.n}
                className="src-item"
                id={'src-' + s.n}
-               style={focused ? { background: 'var(--accent-soft)', borderRadius: 8, padding: 10, margin: '0 -10px' } : null}
+               style={{
+                 cursor: 'pointer',
+                 ...(focused ? { background: 'var(--accent-soft)', borderRadius: 8, padding: 10, margin: '0 -10px' } : {}),
+               }}
+               onClick={() => setSelectedSource(s)}
                onMouseEnter={() => setFocusedNum && setFocusedNum(s.n)}>
             <div className="head">
               <span className="num">{s.n}</span>
@@ -108,12 +128,17 @@ function SourcesView({ message, focusedNum, setFocusedNum }) {
           </div>
         );
       })}
+
+      {selectedSource && (
+        <SourceModal source={selectedSource} onClose={() => setSelectedSource(null)} />
+      )}
     </div>
   );
 }
 
 function EvalView({ activePaperCount }) {
   const [evals, setEvals] = useState([]);
+  const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const loadEvals = () => {
@@ -126,6 +151,7 @@ function EvalView({ activePaperCount }) {
 
   useEffect(() => {
     loadEvals();
+    fetchConfig().then(setConfig).catch(() => setConfig(null));
     const timer = setInterval(loadEvals, 15000);
     return () => clearInterval(timer);
   }, []);
@@ -196,10 +222,21 @@ function EvalView({ activePaperCount }) {
       <div className="inspector-section">
         <h3>当前范围</h3>
         <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, color: 'var(--ink-soft)', lineHeight: 1.7 }}>
-          已选 {activePaperCount} / {PAPERS.length} 篇<br />
-          检索器 · <span style={{ color: 'var(--accent)' }}>hybrid</span> (向量 + BM25 + RRF + 重排)<br />
-          切块 · parent-child · 256/1024<br />
-          最大重试 · 2
+          {config ? (
+            <>
+              已选 {config.paper_count} / {config.paper_count} 篇<br />
+              检索器 · <span style={{ color: 'var(--accent)' }}>{config.retriever}</span> ({config.retriever_detail})<br />
+              切块 · {config.chunk_strategy} · {config.child_chunk_size}/{config.parent_chunk_size}<br />
+              重排 · {config.reranker_model} · top-{config.reranker_top_n}<br />
+              最大重试 · {config.max_retries}<br />
+              模型 · {config.llm_model}
+            </>
+          ) : (
+            <>
+              已选 {activePaperCount} / {PAPERS.length} 篇<br />
+              后端未连接，显示默认值
+            </>
+          )}
         </div>
       </div>
 
@@ -231,7 +268,55 @@ function EvalView({ activePaperCount }) {
   );
 }
 
-export function Inspector({ message, focusedNum, setFocusedNum, activePaperCount, tab, setTab }) {
+/* 推理进行中的实时 trace 视图 */
+function LiveTraceView({ liveTrace, liveStage }) {
+  return (
+    <div className="trace-graph">
+      <div className="trace-graph-head">
+        <h3>推理中…</h3>
+        <span className="run-status"><span className="led blink" />{liveStage || '准备中'}</span>
+      </div>
+      <div className="nodes">
+        {liveTrace.map((n, i) => {
+          const isPending = n.pending;
+          const cls = n.retry ? 'retry' : isPending ? 'pending' : 'done';
+          return (
+            <div key={i} className={'node ' + cls}>
+              <div className="node-dot">{isPending ? '…' : (n.retry ? '↻' : (i + 1))}</div>
+              <div className="node-body">
+                <div className="node-name">
+                  <span>{n.name}</span>
+                  {n.tag && <span className="tag">{n.tag}</span>}
+                  {n.verdict === 'insufficient' && <span className="tag" style={{ background: 'var(--warn-soft)', color: 'var(--warn)' }}>不足</span>}
+                  {n.verdict === 'relevant' && <span className="tag" style={{ background: 'var(--success-soft)', color: 'var(--success)' }}>相关</span>}
+                </div>
+                <div className="node-detail">
+                  {isPending
+                    ? <span style={{ color: 'var(--muted)' }}>执行中…</span>
+                    : n.detail}
+                  {n.quote && <div className="quote" style={{ marginTop: 4 }}>"{n.quote}"</div>}
+                  {n.subnodes && (
+                    <div className="subnodes">
+                      {n.subnodes.map((s, k) => (
+                        <div key={k} className="subnode">
+                          <span className="check">✓</span>
+                          <span>{s}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              {!isPending && n.ms != null && <div className="node-ms">{n.ms}ms</div>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export function Inspector({ message, focusedNum, setFocusedNum, activePaperCount, tab, setTab, busy, liveTrace, liveStage }) {
   return (
     <aside className="inspector">
       <div className="inspector-tabs">
@@ -245,7 +330,10 @@ export function Inspector({ message, focusedNum, setFocusedNum, activePaperCount
                 onClick={() => setTab('evals')}>评估</button>
       </div>
       <div className="inspector-body">
-        {tab === 'trace' && message && <AgentTraceView message={message} />}
+        {tab === 'trace' && busy && liveTrace && liveTrace.length > 0 && (
+          <LiveTraceView liveTrace={liveTrace} liveStage={liveStage} />
+        )}
+        {tab === 'trace' && !busy && message && <AgentTraceView message={message} />}
         {tab === 'sources' && <SourcesView message={message} focusedNum={focusedNum} setFocusedNum={setFocusedNum} />}
         {tab === 'evals' && <EvalView activePaperCount={activePaperCount} />}
       </div>

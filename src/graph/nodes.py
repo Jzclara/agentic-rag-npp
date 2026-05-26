@@ -213,7 +213,8 @@ def retrieve_hybrid_node(state: AgentState) -> dict:
             "fileName": meta.get("file_name", "unknown"),
             "page": meta.get("page_label", "?"),
             "score": round(node.score, 3) if node.score else 0,
-            "quote": node.node.text[:200],  # 取前 200 字作为摘录
+            "quote": node.node.text[:200],  # 取前 200 字作为卡片列表摘录
+            "full_text": node.node.text,    # 完整 chunk 文本，供弹窗展示
         })
 
     print(

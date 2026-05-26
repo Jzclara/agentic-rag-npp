@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Icon } from './Icons.jsx';
 
 /* 左侧栏：文献库 + 最近对话 */
-export function Sidebar({ papers, setPapers, chats, onNewChat }) {
+export function Sidebar({ papers, setPapers, chats, activeChatId, onNewChat, onSwitchChat, onDeleteChat }) {
   const allSelected = papers.length > 0 && papers.every(p => p.selected);
   const someSelected = papers.some(p => p.selected) && !allSelected;
   const selectedCount = papers.filter(p => p.selected).length;
@@ -129,11 +129,26 @@ export function Sidebar({ papers, setPapers, chats, onNewChat }) {
           </div>
           <div className="chats">
             {chats.map(c => (
-              <div key={c.id} className={'chat-row ' + (c.active ? 'active' : '')}>
+              <div key={c.id}
+                   className={'chat-row ' + (c.id === activeChatId ? 'active' : '')}
+                   onClick={() => onSwitchChat && onSwitchChat(c.id)}>
                 <span className="dot" />
                 <span className="title">{c.title}</span>
+                <button className="paper-remove"
+                        title="删除对话"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm('删除这个对话？')) onDeleteChat && onDeleteChat(c.id);
+                        }}>
+                  <Icon.X />
+                </button>
               </div>
             ))}
+            {chats.length === 0 && (
+              <div style={{ color: 'var(--muted)', fontSize: 12, padding: '8px 12px' }}>
+                暂无对话记录
+              </div>
+            )}
           </div>
         </section>
       </div>
