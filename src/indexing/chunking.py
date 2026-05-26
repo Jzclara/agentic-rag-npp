@@ -24,3 +24,33 @@ def get_text_splitter(chunk_size: int = 512, chunk_overlap: int =50) -> Sentence
 # 我没有在你的语料上测试过，这只是合理的起点。
 # 这也是为什么第二阶段要接入 Ragas——到时候你可以把 chunk_size 改成 256 或 1024，重新跑评估，
 # 用 faithfulness 和 answer relevancy 的数据来判断哪个更好，而不是靠感觉。
+
+
+# ── Parent-Child Chunk 分块器 ──
+# parent 大块（1024）提供完整上下文，child 小块（256）做精准检索匹配。
+# 两者配合使用：索引建在 child 上，检索命中 child 后返回对应 parent 的完整文本。
+
+from src.config import (
+    PARENT_CHUNK_SIZE,
+    PARENT_CHUNK_OVERLAP,
+    CHILD_CHUNK_SIZE,
+    CHILD_CHUNK_OVERLAP,
+)
+
+
+def get_parent_splitter() -> SentenceSplitter:
+    """创建 parent 分块器，切出大块（默认 1024 token）。
+    每个 parent 块包含一段较完整的论述，后续会作为 LLM 的上下文。"""
+    return SentenceSplitter(
+        chunk_size=PARENT_CHUNK_SIZE,
+        chunk_overlap=PARENT_CHUNK_OVERLAP,
+    )
+
+
+def get_child_splitter() -> SentenceSplitter:
+    """创建 child 分块器，把每个 parent 再切成小块（默认 256 token）。
+    小块用于向量检索匹配，匹配更精准。"""
+    return SentenceSplitter(
+        chunk_size=CHILD_CHUNK_SIZE,
+        chunk_overlap=CHILD_CHUNK_OVERLAP,
+    )

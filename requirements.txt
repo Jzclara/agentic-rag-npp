@@ -7,12 +7,13 @@ pypdf
 pandas
 
 # Stage 2: Evaluation with Ragas
-# ragas
-# datasets
+ragas
+datasets
+langchain_huggingface
 
 # Stage 3: Agent orchestration with LangGraph
-# langgraph
-# langchain-openai
+langgraph
+langchain-openai
 
 # Stage 5: Demo UI
 # streamlit

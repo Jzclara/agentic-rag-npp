@@ -45,3 +45,19 @@ BGE_LOCAL_FILES_ONLY=true
 ```
 
 注意：运行前需要先把 PDF 论文放到 `data/raw/`，并在 `.env` 中填写 `LLM_API_KEY`。
+
+## Evaluation
+
+Ragas 评估会读取 `results/runs/` 中保存的 RAG 运行记录，并把评估结果保存到 `results/evals/`。
+
+交互式选择已有运行记录：
+
+```powershell
+.venv\Scripts\python.exe -m src.evals.run_ragas
+```
+
+直接评估指定运行名称：
+
+```powershell
+.venv\Scripts\python.exe -m src.evals.run_ragas --run-name Mulchat1
+```

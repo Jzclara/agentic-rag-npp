@@ -6,8 +6,8 @@ def format_history(history: list[dict[str, str]], max_turns: int = 4) -> str:
 
     lines = []
     for item in recent_history:
-        role = item["role"]
-        content = item["content"]
+        role = item.get("role", "unknown")
+        content = item.get("content", item.get("text", ""))
         lines.append(f"{role}: {content}")
 
     return "\n".join(lines)

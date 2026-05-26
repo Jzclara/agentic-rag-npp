@@ -17,6 +17,12 @@ __pycache__/
 # Local caches
 .cache/
 
+# Frontend
+web/node_modules/
+
+# Archives
+*.zip
+
 # Generated indexes and results
 index/*
 !index/.gitkeep

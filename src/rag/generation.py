@@ -31,23 +31,35 @@ def generate_answer_with_history(
     contexts: list[str],
     history: list[dict[str, str]],
 ) -> str:
-    context_str = "\n\n".join(contexts)
+    # 给每个上下文片段编号，让 LLM 知道哪段是 [1]、哪段是 [2]
+    numbered_contexts = []
+    for i, ctx in enumerate(contexts, start=1):
+        numbered_contexts.append(f"[{i}] {ctx}")
+    context_str = "\n\n".join(numbered_contexts)
+
     history_str = format_history(history)
     prompt = (
         "Answer the current question based only on the retrieved context below.\n"
         "Use the conversation history only to understand what the user is referring to.\n"
         "If the retrieved context does not contain enough evidence, say you do not know.\n\n"
+        "Requirements:\n"
+        "1. Give a thorough, detailed answer. Cover the key points from the context.\n"
+        "2. When you use information from a context passage, cite it with [n] in square brackets.\n"
+        "   Example: 'BN is a probabilistic graphical model [1].'\n"
+        "   You may cite multiple sources: 'Both studies agree [1][3].'\n"
+        "3. Only cite passages you actually use. Do not list all sources at the end.\n"
+        "4. Structure your answer with clear paragraphs. Use numbered lists when comparing methods.\n\n"
         f"Conversation history:\n{history_str}\n\n"
         f"Retrieved context:\n{context_str}\n\n"
         f"Current question:\n{query}\n\n"
-        "Answer:"
+        "Answer (in the same language as the question, with inline citations):"
     )
     response = client.chat.completions.create(
         model=LLM_MODEL,
         messages=[
             {
                 "role": "system",
-                "content": "You are a RAG assistant. Answer using only the retrieved paper context.",
+                "content": "You are a RAG assistant. Answer using only the retrieved paper context. Always cite sources with [n] markers.",
             },
             {"role": "user", "content": prompt},
         ],
