@@ -6,12 +6,35 @@
 # ─────────────────────────────────────────────────────────────
 
 services:
+  # ===== 数据库：PostgreSQL（持久化聊天记录）=====
+  db:
+    image: postgres:16-alpine
+    environment:
+      # 这三个变量决定初始化出来的账号/密码/库名，与 api 的 DATABASE_URL 必须对应。
+      POSTGRES_USER: ${POSTGRES_USER:-rag}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rag_pwd}
+      POSTGRES_DB: ${POSTGRES_DB:-ragdb}
+    volumes:
+      - pgdata:/var/lib/postgresql/data   # 命名卷持久化：容器删了数据还在
+    ports:
+      - "5432:5432"                 # 暴露到本机，方便本地连库 / 跑迁移脚本 / 用客户端查看
+    healthcheck:
+      # 用 PG 自带的 pg_isready 探活，通了 api 才启动。
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rag} -d ${POSTGRES_DB:-ragdb}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   # ===== 后端：FastAPI + LangGraph =====
   api:
     build: .                      # 用当前目录的 Dockerfile 构建
     image: agentic-rag-api        # 构建出的镜像名
     env_file:
       - .env                      # 注入 LLM key 等环境变量
+    environment:
+      # 容器内连库用服务名 db 当主机名（compose 自带 DNS）。
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-rag_pwd}@db:5432/${POSTGRES_DB:-ragdb}
     volumes:
       # 挂载：模型 / 索引 / 数据 / 结果，留在本机，不进镜像
       - ./.cache:/app/.cache
@@ -20,6 +43,9 @@ services:
       - ./results:/app/results
     ports:
       - "8000:8000"               # 映射后端端口（方便直接调试 /api）
+    depends_on:
+      db:
+        condition: service_healthy   # 等 db「健康」后再启动 api
     restart: unless-stopped
     # 健康检查：容器内探测 /api/health，通了才算「健康」。
     # 用 python 自带的 urllib（slim 镜像没有 curl）。
@@ -40,3 +66,7 @@ services:
       api:
         condition: service_healthy   # 等 api「健康」（/api/health 通）后再启动 web
     restart: unless-stopped
+
+# 命名卷：PostgreSQL 数据落在这里，docker compose down 不会丢，down -v 才清空。
+volumes:
+  pgdata:

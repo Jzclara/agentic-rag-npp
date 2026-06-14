@@ -35,3 +35,7 @@ rank-bm25==0.2.2
 fastapi==0.136.1
 pydantic==2.13.4
 python-multipart
+
+# Stage 5: PostgreSQL 持久化（psycopg3 驱动 + 连接池）
+psycopg[binary]==3.2.10
+psycopg-pool==3.2.6

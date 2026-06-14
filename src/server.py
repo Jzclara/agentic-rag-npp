@@ -20,6 +20,7 @@ from pathlib import Path
 
 from src.graph.app import build_graph
 from src.evals.run_ragas import setup_ragas_llm
+from src import db
 
 app = FastAPI()
 
@@ -40,6 +41,11 @@ graph = build_graph()
 print("加载 Ragas 评估模型...")
 ragas_llm, ragas_embeddings = setup_ragas_llm()
 print("Ragas 评估模型加载完成。")
+
+# 打开数据库连接池并建表（幂等），聊天记录持久化到 PostgreSQL。
+print("初始化数据库...")
+db.init_db()
+print("数据库初始化完成。")
 
 
 def eval_single_query(question: str, answer: str, contexts: list[str]) -> dict:
@@ -139,7 +145,6 @@ def parse_answer_to_parts(text: str) -> list[dict]:
 
 # ── 接口 ──
 EVALS_DIR = Path("results/evals")
-CHATS_DIR = Path("results/chats")
 
 
 @app.get("/api/health")
@@ -187,8 +192,9 @@ def get_config():
 
 
 # ── 聊天记录持久化 ──
-# 每个对话存为 results/chats/{chat_id}.json
-# 前端每次发消息后调用 save 接口，刷新时调用 list + load 恢复
+# 持久化到 PostgreSQL（见 src/db.py）：chats / messages 两表，一对多。
+# 前端每次发消息后调用 save 接口，刷新时调用 list + load 恢复。
+# 接口的入参和返回结构与原 JSON 文件版本完全一致，前端无需改动。
 
 
 class ChatSaveRequest(BaseModel):
@@ -199,53 +205,27 @@ class ChatSaveRequest(BaseModel):
 
 @app.get("/api/chats")
 def list_chats():
-    """列出所有已保存的对话，按修改时间倒序，只返回摘要信息。"""
-    CHATS_DIR.mkdir(parents=True, exist_ok=True)
-    chats = []
-    for path in sorted(CHATS_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        chats.append({
-            "id": data["chat_id"],
-            "title": data.get("title", "未命名对话"),
-            "message_count": len(data.get("messages", [])),
-            "updated_at": data.get("updated_at", ""),
-        })
-    return {"chats": chats}
+    """列出所有已保存的对话，按更新时间倒序，只返回摘要信息。"""
+    return {"chats": db.db_list_chats()}
 
 
 @app.get("/api/chats/{chat_id}")
 def load_chat(chat_id: str):
     """加载某个对话的完整消息记录。"""
-    path = CHATS_DIR / f"{chat_id}.json"
-    if not path.exists():
-        return {"chat_id": chat_id, "title": "", "messages": []}
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    return db.db_load_chat(chat_id)
 
 
 @app.post("/api/chats/save")
 def save_chat(req: ChatSaveRequest):
     """保存/更新一个对话。前端每次收到新回答后调用。"""
-    CHATS_DIR.mkdir(parents=True, exist_ok=True)
-    data = {
-        "chat_id": req.chat_id,
-        "title": req.title,
-        "messages": req.messages,
-        "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-    }
-    path = CHATS_DIR / f"{req.chat_id}.json"
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    db.db_save_chat(req.chat_id, req.title, req.messages)
     return {"ok": True}
 
 
 @app.delete("/api/chats/{chat_id}")
 def delete_chat(chat_id: str):
     """删除一个对话。"""
-    path = CHATS_DIR / f"{chat_id}.json"
-    if path.exists():
-        path.unlink()
+    db.db_delete_chat(chat_id)
     return {"ok": True}
 
 
