@@ -756,6 +756,10 @@ input, textarea { font-family: inherit; }
 .send-btn:hover { background: var(--accent); }
 .send-btn:disabled { background: var(--border-strong); cursor: not-allowed; }
 
+/* 生成中的「停止」按钮：可点击，hover 变红提示中断 */
+.stop-btn { cursor: pointer; }
+.stop-btn:hover { background: #dc2626; }
+
 .suggestions {
   display: flex;
   flex-wrap: wrap;

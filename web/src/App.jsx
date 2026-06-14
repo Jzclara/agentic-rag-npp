@@ -137,11 +137,23 @@ export default function App() {
   };
 
   /* 发送一条问题 —— 调用后端 /api/chat，通过 SSE 实时接收结果。 */
+  // 当前请求的中断控制器：用户点「停止」时 abort()，中断 fetch 流。
+  const abortRef = useRef(null);
+
+  // 停止生成：中断当前请求。finally 里会复位 busy/trace（方案 A：丢弃已生成的部分）。
+  const stopGeneration = () => {
+    if (abortRef.current) abortRef.current.abort();
+  };
+
   const sendMessage = async (text) => {
     const userMsg = { id: 'u-' + Date.now(), role: 'user', text };
     setMessages(prev => [...prev, userMsg]);
     setBusy(true);
     setLiveTrace([]);
+
+    // 每次发送都新建一个控制器，供「停止」按钮中断本次请求。
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     let answerParts = [];
     let sources = [];
@@ -187,11 +199,18 @@ export default function App() {
             setMessages(prev => [...prev, assistantMsg]);
             setFocusedMessage(assistantMsg);
           }
-        }
+        },
+        controller.signal,
       );
     } catch (err) {
-      console.error('chat failed', err);
+      // 用户主动停止会抛 AbortError，这是预期行为，不当作错误。
+      if (err.name === 'AbortError') {
+        console.log('已停止生成');
+      } else {
+        console.error('chat failed', err);
+      }
     } finally {
+      abortRef.current = null;
       setBusy(false);
       setLiveStage('');
       setLiveTrace([]);
@@ -204,6 +223,7 @@ export default function App() {
   // 切换到已有对话
   const switchChat = (id) => {
     if (id === chatId) return;
+    stopGeneration();   // 有请求在跑则中断，避免回包落到新对话里
     loadChat(id)
       .then(data => {
         setChatId(id);
@@ -215,6 +235,7 @@ export default function App() {
 
   // 新建对话
   const newChat = () => {
+    stopGeneration();   // 有请求在跑则中断，避免回包落到新对话里
     const newId = 'chat-' + Date.now();
     setChatId(newId);
     setMessages([]);
@@ -282,7 +303,7 @@ export default function App() {
             {busy && <ThinkingMessage stage={liveStage} traceLive={liveTrace} />}
           </div>
         </div>
-        <Composer scope={activePaperCount} onSend={sendMessage} busy={busy} />
+        <Composer scope={activePaperCount} onSend={sendMessage} onStop={stopGeneration} busy={busy} />
       </div>
 
       {tweaks.inspectorOpen && (

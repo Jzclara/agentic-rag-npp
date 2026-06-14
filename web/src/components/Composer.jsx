@@ -3,7 +3,7 @@ import { Icon } from './Icons.jsx';
 import { SUGGESTIONS } from '../data.js';
 
 /* 底部输入框 + 候选建议 */
-export function Composer({ scope, onSend, busy }) {
+export function Composer({ scope, onSend, onStop, busy }) {
   const [val, setVal] = useState('');
   const ref = useRef(null);
 
@@ -43,9 +43,16 @@ export function Composer({ scope, onSend, busy }) {
           <div className="left">
             <span className="scope-chip"><span className="num">{scope}</span> 篇在用</span>
           </div>
-          <button className="send-btn" onClick={submit} disabled={busy || !val.trim()}>
-            <Icon.Send />
-          </button>
+          {busy ? (
+            // 生成中：发送按钮变成「停止」按钮，点击中断本次请求
+            <button className="send-btn stop-btn" onClick={onStop} title="停止生成">
+              <Icon.Stop />
+            </button>
+          ) : (
+            <button className="send-btn" onClick={submit} disabled={!val.trim()}>
+              <Icon.Send />
+            </button>
+          )}
         </div>
       </div>
       <div className="suggestions">

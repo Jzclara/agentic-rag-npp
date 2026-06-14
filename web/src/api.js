@@ -107,11 +107,12 @@ export async function deletePaper(id) {
        if (evt.type === 'done')       ...
      });
 */
-export async function chatStream({ question, history = [], selectedPaperIds = [], chatId = null }, onEvent) {
+export async function chatStream({ question, history = [], selectedPaperIds = [], chatId = null }, onEvent, signal = null) {
   const r = await fetch(`${BASE}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ question, history, selected_paper_ids: selectedPaperIds, chat_id: chatId }),
+    signal,   // 传入 AbortController 的 signal，用户点「停止」时中断请求
   });
   if (!r.ok || !r.body) throw new Error(`chatStream ${r.status}`);
 
