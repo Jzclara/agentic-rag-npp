@@ -291,7 +291,8 @@ input, textarea { font-family: inherit; }
   transition: opacity .12s, transform .12s, color .12s, border-color .12s, background .12s;
   padding: 0;
 }
-.paper-row:hover .paper-remove { opacity: 1; transform: scale(1); }
+.paper-row:hover .paper-remove,
+.chat-row:hover .paper-remove { opacity: 1; transform: scale(1); }
 .paper-remove:hover {
   color: var(--warn, #c45a3a);
   border-color: var(--border-strong);
@@ -372,7 +373,8 @@ input, textarea { font-family: inherit; }
   gap: 2px;
 }
 .chat-row {
-  padding: 7px 9px;
+  position: relative;            /* 让绝对定位的删除按钮锚定到本行右上角 */
+  padding: 7px 26px 7px 9px;     /* 右侧留出空间给删除按钮，避免压住标题 */
   border-radius: 8px;
   cursor: pointer;
   font-size: 12.5px;
