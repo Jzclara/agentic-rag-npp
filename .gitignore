@@ -30,6 +30,8 @@ results/runs/*
 !results/runs/.gitkeep
 results/evals/*
 !results/evals/.gitkeep
+results/chats/*
+!results/chats/.gitkeep
 
 # Local raw/processed data can be large or private
 data/raw/*

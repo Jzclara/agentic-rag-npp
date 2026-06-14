@@ -1,0 +1,6 @@
+# 这些不进构建上下文：容器内会自己 npm ci 重新装、重新打包
+node_modules/
+dist/
+.vite/
+Dockerfile
+.dockerignore

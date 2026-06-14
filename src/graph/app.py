@@ -39,15 +39,24 @@ def increment_retry(state: AgentState) -> dict:
 # ── 构建图 ──
 
 
-def build_graph():
-    """构建并返回编译好的 Agentic RAG 图。"""
+RETRIEVE_NODES = {
+    "vector":       retrieve_node,                # 纯向量 + Rerank
+    "parent_child": retrieve_parent_child_node,   # Parent-Child + Rerank
+    "hybrid":       retrieve_hybrid_node,          # Hybrid（向量 + BM25 + RRF）+ Rerank
+}
+
+
+def build_graph(retriever_type: str = "hybrid"):
+    """构建并返回编译好的 Agentic RAG 图。
+    retriever_type: "vector" | "parent_child" | "hybrid"（默认 hybrid）"""
+    if retriever_type not in RETRIEVE_NODES:
+        raise ValueError(f"未知的检索策略：{retriever_type}，可选：{list(RETRIEVE_NODES.keys())}")
+
     graph = StateGraph(AgentState)
 
     # 注册节点：名字 → 函数
     graph.add_node("rewrite", rewrite_node)              # 改写问题，解析指代词
-    # graph.add_node("retrieve", retrieve_node)            # 用改写后的问题检索文档、
-    # graph.add_node("retrieve", retrieve_parent_child_node)
-    graph.add_node("retrieve", retrieve_hybrid_node)
+    graph.add_node("retrieve", RETRIEVE_NODES[retriever_type])
     graph.add_node("grade", grade_node)                  # 让 LLM 判断检索内容是否足够
     graph.add_node("generate", generate_node)            # 检索足够时，生成最终回答
     graph.add_node("fallback", fallback_node)            # 重试用完仍不足时，给兜底回答

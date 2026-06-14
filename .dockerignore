@@ -1,0 +1,24 @@
+# 这些都不需要进镜像（要么靠挂载，要么是本地产物）
+
+# Python 本地环境与缓存
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 模型 / 索引 / 数据 / 结果：全部靠挂载，不进镜像
+.cache/
+index/
+data/
+results/
+
+# 前端（后端镜像用不到，前端有自己的 Dockerfile）
+web/
+
+# 文档、脚本、Git、密钥
+docs/
+*.bat
+.git/
+.env

@@ -9,6 +9,7 @@ Agentic RAG 后端服务。
 import json
 import re
 import time
+import traceback
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,6 +19,7 @@ from pydantic import BaseModel
 from pathlib import Path
 
 from src.graph.app import build_graph
+from src.evals.run_ragas import setup_ragas_llm
 
 app = FastAPI()
 
@@ -33,6 +35,32 @@ app.add_middleware(
 # 编译 LangGraph 图，全局只做一次，后续每次请求复用。
 # 这一步会触发索引加载和 embedding 模型加载，首次启动会慢几秒。
 graph = build_graph()
+
+# 初始化 Ragas 评估用的 LLM 和 Embedding（全局只加载一次）
+print("加载 Ragas 评估模型...")
+ragas_llm, ragas_embeddings = setup_ragas_llm()
+print("Ragas 评估模型加载完成。")
+
+
+def eval_single_query(question: str, answer: str, contexts: list[str]) -> dict:
+    """对单次问答进行 Ragas 评估，返回 faithfulness 和 answer_relevancy 分数。"""
+    from datasets import Dataset
+    from ragas import evaluate
+    from ragas.metrics import Faithfulness, AnswerRelevancy
+
+    dataset = Dataset.from_list([{
+        "question": question,
+        "answer": answer,
+        "contexts": contexts,
+    }])
+    result = evaluate(
+        dataset=dataset,
+        metrics=[Faithfulness(), AnswerRelevancy()],
+        llm=ragas_llm,
+        embeddings=ragas_embeddings,
+    )
+    scores = result.to_pandas()[["faithfulness", "answer_relevancy"]].iloc[0].to_dict()
+    return scores
 
 
 # ── 请求体定义 ──
@@ -357,7 +385,22 @@ def chat(req: ChatRequest):
         })
 
         # ═══════════════════════════════════════════
-        # 第 4 步：推送完成信号
+        # 第 4 步：实时评估本次回答
+        # ═══════════════════════════════════════════
+        try:
+            final_contexts = [s["quote"] for s in final_sources] if final_sources else []
+            scores = eval_single_query(req.question, final_answer, final_contexts)
+            yield sse_event({
+                "type": "eval",
+                "faithfulness": round(scores["faithfulness"], 3),
+                "answer_relevancy": round(scores["answer_relevancy"], 3),
+            })
+        except Exception as e:
+            print(f"实时评估失败: {e}")
+            traceback.print_exc()
+
+        # ═══════════════════════════════════════════
+        # 第 5 步：推送完成信号
         # ═══════════════════════════════════════════
         total_ms = int((time.time() - total_start) * 1000)
         yield sse_event({

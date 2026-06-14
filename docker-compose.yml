@@ -1,0 +1,42 @@
+# ─────────────────────────────────────────────────────────────
+# 一键编排：后端 api + 前端 web
+# 启动：docker compose up        （加 -d 后台运行）
+# 停止：docker compose down
+# 重新构建：docker compose up --build
+# ─────────────────────────────────────────────────────────────
+
+services:
+  # ===== 后端：FastAPI + LangGraph =====
+  api:
+    build: .                      # 用当前目录的 Dockerfile 构建
+    image: agentic-rag-api        # 构建出的镜像名
+    env_file:
+      - .env                      # 注入 LLM key 等环境变量
+    volumes:
+      # 挂载：模型 / 索引 / 数据 / 结果，留在本机，不进镜像
+      - ./.cache:/app/.cache
+      - ./index:/app/index
+      - ./data:/app/data
+      - ./results:/app/results
+    ports:
+      - "8000:8000"               # 映射后端端口（方便直接调试 /api）
+    restart: unless-stopped
+    # 健康检查：容器内探测 /api/health，通了才算「健康」。
+    # 用 python 自带的 urllib（slim 镜像没有 curl）。
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 5s          # 每 5 秒探一次
+      timeout: 3s           # 单次探测超过 3 秒算失败
+      retries: 20           # 连续失败 20 次才判定不健康（给模型加载留足时间）
+      start_period: 10s     # 启动后前 10 秒的失败不计数（容器刚起，正常还没好）
+
+  # ===== 前端：Nginx 托管静态页 + 转发 /api =====
+  web:
+    build: ./web                  # 用 web/ 目录的 Dockerfile 构建
+    image: agentic-rag-web
+    ports:
+      - "8080:80"                 # 浏览器访问 http://localhost:8080
+    depends_on:
+      api:
+        condition: service_healthy   # 等 api「健康」（/api/health 通）后再启动 web
+    restart: unless-stopped

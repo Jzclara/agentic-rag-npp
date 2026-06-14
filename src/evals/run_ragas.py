@@ -25,7 +25,10 @@ from src.config import (
     BGE_CACHE_DIR,
 )
 from src.indexing.build_index import build_index
-from src.indexing.retriever import get_retriever, retrieve, get_contexts
+from src.indexing.retriever import (
+    get_retriever, retrieve, get_contexts,
+    rerank_nodes, setup_bm25, hybrid_retrieve,
+)
 from src.llm import setup_llm
 from src.rag.generation import generate_answer_with_history, rewrite_query_with_history
 
@@ -34,7 +37,8 @@ from src.graph.app import build_graph
 # ── 路径常量 ──
 
 RUNS_DIR = Path("results/runs")
-TESTSET_PATH = Path(__file__).parent / "testset.jsonl"
+TESTSET_PATH = Path(__file__).parent / "testset.jsonl"       # 2 组 8 题，快速迭代用
+TESTSET2_PATH = Path(__file__).parent / "testset2.jsonl"     # 8 组 32 题，完整评估用
 
 
 # ── Ragas 初始化 ──
@@ -45,7 +49,7 @@ def setup_ragas_llm():
     Ragas 内部用 LLM 判断 faithfulness（答案是否有检索内容支持），
     用 Embedding 计算 answer_relevancy（答案和问题的语义相似度）。"""
     client = OpenAIClient(api_key=LLM_API_KEY, base_url=LLM_BASE_URL)
-    llm = llm_factory(LLM_MODEL, client=client)
+    llm = llm_factory(LLM_MODEL, client=client, max_tokens=4096)
     embeddings = LangchainEmbeddingsWrapper(
         HuggingFaceEmbeddings(
             model_name=BGE_EMBEDDING_MODEL,
@@ -159,58 +163,94 @@ def eval_from_records():
 # ── 模式 2：从 testset.jsonl 自动运行评估 ──
 
 
-def load_testset() -> list[dict]:
-    """读取 testset.jsonl，每行是一组多轮对话：
+def choose_testset() -> Path:
+    """让用户选择使用哪个测试集。"""
+    print("选择测试集：")
+    print("  [1] testset.jsonl  — 2 组 8 题（快速迭代）")
+    print("  [2] testset2.jsonl — 8 组 32 题（完整评估）")
+    choice = input("请输入编号（默认 1）：").strip()
+    if choice == "2":
+        print("已选择：testset2.jsonl（8 组 32 题）")
+        return TESTSET2_PATH
+    print("已选择：testset.jsonl（2 组 8 题）")
+    return TESTSET_PATH
+
+
+def choose_retriever() -> str:
+    """让用户选择检索策略。"""
+    print("选择检索策略：")
+    print("  [1] 纯向量 + Rerank")
+    print("  [2] Hybrid（向量 + BM25 + RRF）+ Rerank")
+    choice = input("请输入编号（默认 2）：").strip()
+    if choice == "1":
+        print("已选择：纯向量 + Rerank")
+        return "vector"
+    print("已选择：Hybrid + Rerank")
+    return "hybrid"
+
+
+def load_testset(path: Path | None = None) -> list[dict]:
+    """读取指定的 testset jsonl 文件，每行是一组多轮对话：
     {"group": "组名", "turns": ["问题1", "问题2", ...]}"""
+    if path is None:
+        path = TESTSET_PATH
     groups = []
-    with open(TESTSET_PATH, "r", encoding="utf-8") as f:
+    with open(path, "r", encoding="utf-8") as f:
         for line in f:
             groups.append(json.loads(line))
     return groups
 
 
 def run_testset_eval():
-    """模式 2：从 testset.jsonl 自动运行多轮对话并评估。
-    流程：读取固定问题 → 逐组模拟多轮对话（rewrite → 检索 → 生成）→ Ragas 打分 → 保存。
+    """模式 2：从 testset 自动运行多轮对话并评估。
+    流程：选择测试集 → 选择检索策略 → 逐组模拟多轮对话（rewrite → 检索 → 生成）→ Ragas 打分 → 保存。
     因为问题固定，每次改进系统后重跑，分数可直接对比。"""
+    testset_path = choose_testset()
+    retriever_type = choose_retriever()
+
     print("加载模型和索引...")
     client = setup_llm()
     index = build_index()
     retriever = get_retriever(index)
 
+    use_hybrid = retriever_type == "hybrid"
+    if use_hybrid:
+        setup_bm25(index)
+
     all_samples = []
 
-    groups = load_testset()
-    print(f"共 {len(groups)} 组对话，开始自动运行...\n")
+    groups = load_testset(testset_path)
+    print(f"共 {len(groups)} 组对话，检索策略：{retriever_type}，开始自动运行...\n")
 
     for group in groups:
         group_name = group["group"]
         turns = group["turns"]
-        # 每组对话独立维护历史，模拟真实多轮场景
         history: list[dict[str, str]] = []
 
         print(f"--- {group_name} ---")
 
         for question in turns:
-            # 1. 用对话历史改写问题，解析指代词（如 "they" → 具体方法名）
             standalone_query = rewrite_query_with_history(client, question, history)
-            # 2. 用改写后的问题检索相关文档片段
-            nodes = retrieve(retriever, standalone_query)
-            contexts = get_contexts(nodes)
-            # 3. 基于检索上下文和对话历史生成回答
+
+            if use_hybrid:
+                fused_nodes = hybrid_retrieve(standalone_query, retriever)
+                ranked_nodes = rerank_nodes(standalone_query, fused_nodes)
+            else:
+                raw_nodes = retrieve(retriever, standalone_query)
+                ranked_nodes = rerank_nodes(standalone_query, raw_nodes)
+
+            contexts = get_contexts(ranked_nodes)
             answer = generate_answer_with_history(client, question, contexts, history)
 
             print(f"  Q: {question}")
             print(f"  A: {answer[:100]}...")
 
-            # 收集 Ragas 需要的三元组：改写后的问题、回答、检索上下文
             all_samples.append({
                 "question": standalone_query,
                 "answer": answer,
                 "contexts": contexts,
             })
 
-            # 更新对话历史，供下一轮 rewrite 和生成使用
             history.append({"role": "user", "content": question})
             history.append({"role": "assistant", "content": answer})
 
@@ -227,21 +267,26 @@ def run_testset_eval():
         embeddings=embeddings,
     )
     print(result)
-    save_eval_result(result, run_name="testset_baseline", num_samples=len(all_samples))
+    # 命名规则：测试集规模 + 检索策略 + 管线类型
+    size_tag = "32q" if testset_path == TESTSET2_PATH else "8q"
+    tag = f"{size_tag}_{retriever_type}_baseline"
+    save_eval_result(result, run_name=tag, num_samples=len(all_samples))
 
 
 # ── 模式 3：用 Agentic RAG 图跑 testset 评估 ──
 
 def run_testset_agentic_eval():
-    """模式 3：用 LangGraph Agentic RAG 图跑 testset.jsonl 并评估。
+    """模式 3：用 LangGraph Agentic RAG 图跑 testset 并评估。
     和模式 2 的区别：模式 2 是线性的 rewrite → retrieve → generate，
     模式 3 走完整的图流程，包含 grade 判断、重试和 fallback。"""
+    testset_path = choose_testset()
+    retriever_type = choose_retriever()
     print("编译 Agentic RAG 图...")
-    graph = build_graph()
+    graph = build_graph(retriever_type=retriever_type)
 
     all_samples = []
 
-    groups = load_testset()
+    groups = load_testset(testset_path)
     print(f"共 {len(groups)} 组对话，开始自动运行...\n")
 
     for group in groups:
@@ -259,6 +304,7 @@ def run_testset_agentic_eval():
                 "history": history,
                 "standalone_query": "",
                 "contexts": [],
+                "sources": [],
                 "context_sufficient": False,
                 "retry_count": 0,
                 "max_retries": 2,
@@ -294,7 +340,9 @@ def run_testset_agentic_eval():
         embeddings=embeddings,
     )
     print(eval_result)
-    save_eval_result(eval_result, run_name="testset_agentic", num_samples=len(all_samples))
+    size_tag = "32q" if testset_path == TESTSET2_PATH else "8q"
+    tag = f"{size_tag}_{retriever_type}_agentic"
+    save_eval_result(eval_result, run_name=tag, num_samples=len(all_samples))
 
 
 # ── 入口 ──
@@ -303,8 +351,8 @@ def run_testset_agentic_eval():
 def main():
     print("选择评估模式：")
     print("  [1] 从已有对话记录评估")
-    print("  [2] 从 testset.jsonl 自动运行评估（标准化，可对比）")
-    print("  [3] 从 testset.jsonl 自动运行评估（Agentic RAG）")
+    print("  [2] 从 testset 自动运行评估（Baseline，可选 2 组 / 8 组）")
+    print("  [3] 从 testset 自动运行评估（Agentic RAG，可选 2 组 / 8 组）")
     choice = input("请输入编号：").strip()
 
     if choice == "1":

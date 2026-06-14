@@ -146,6 +146,7 @@ export default function App() {
     let answerParts = [];
     let sources = [];
     let traceNodes = [];
+    let evalScores = null;
     try {
       await chatStream(
         { question: text, history: messages, selectedPaperIds: papers.filter(p => p.selected).map(p => p.id) },
@@ -155,7 +156,6 @@ export default function App() {
             setLiveTrace(prev => [...prev, { name: evt.name, pending: true }]);
           } else if (evt.type === 'node_done') {
             traceNodes.push(evt);
-            // 把 liveTrace 里对应的 pending 节点替换为完整的 node_done 数据
             setLiveTrace(prev => {
               const updated = [...prev];
               const idx = updated.findIndex(n => n.name === evt.name && n.pending);
@@ -169,15 +169,20 @@ export default function App() {
           } else if (evt.type === 'answer') {
             answerParts = evt.parts;
             sources = evt.sources;
+          } else if (evt.type === 'eval') {
+            evalScores = { faithfulness: evt.faithfulness, answer_relevancy: evt.answer_relevancy };
+            setLiveStage('评估中');
           } else if (evt.type === 'done') {
             const assistantMsg = {
               id: 'a-' + Date.now(),
               role: 'assistant',
+              _userText: text,
               standalone: text,
               timing: { totalMs: evt.totalMs, tokens: evt.tokens },
               trace: { status: 'complete', retries: evt.retries, grade: 'relevant', nodes: traceNodes },
               answer: answerParts,
               sources,
+              eval: evalScores,
             };
             setMessages(prev => [...prev, assistantMsg]);
             setFocusedMessage(assistantMsg);
@@ -241,10 +246,6 @@ export default function App() {
           <span className="brand-sub">· NPP 文献库</span>
         </div>
         <div className="topbar-right">
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--muted)', marginRight: 8 }}>
-            <span style={{ color: 'var(--accent)' }}>●</span> hybrid · rerank · parent-child
-          </span>
-          <button className="icon-btn" title="搜索"><Icon.Search /></button>
           <button className="icon-btn" title="界面设置" onClick={openTweaks}><Icon.Settings /></button>
           <button className="icon-btn"
                   aria-pressed={tweaks.inspectorOpen}
@@ -262,7 +263,7 @@ export default function App() {
       <div className="main">
         <div className="thread-bar">
           <div className="thread-title">
-            <h2>用于故障诊断的贝叶斯网络</h2>
+            <h2>{chatTitle || '新对话'}</h2>
             <span className="scope">·  {activePaperCount} 篇在用 · {messagesWithUser.filter(m => m.role === 'user').length} 轮对话</span>
           </div>
           <div className="thread-actions">

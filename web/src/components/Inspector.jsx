@@ -69,6 +69,33 @@ function AgentTraceView({ message }) {
         })}
       </div>
 
+      {message.eval && (
+        <div style={{
+          marginTop: 14, paddingTop: 12, borderTop: '1px dashed var(--border)',
+        }}>
+          <div style={{
+            fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--muted)',
+            textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8,
+          }}>本次评估 (Ragas)</div>
+          <div style={{ display: 'flex', gap: 16 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 2 }}>忠实度</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: message.eval.faithfulness >= 0.7 ? 'var(--success)' : 'var(--warn)' }}>
+                {message.eval.faithfulness.toFixed(2)}
+              </div>
+              <div className="bar" style={{ marginTop: 4 }}><div style={{ width: (message.eval.faithfulness * 100) + '%' }} /></div>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 2 }}>相关性</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: message.eval.answer_relevancy >= 0.7 ? 'var(--success)' : 'var(--warn)' }}>
+                {message.eval.answer_relevancy.toFixed(2)}
+              </div>
+              <div className="bar" style={{ marginTop: 4 }}><div style={{ width: (message.eval.answer_relevancy * 100) + '%' }} /></div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{
         marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)',
         display: 'flex', justifyContent: 'space-between',
@@ -326,8 +353,6 @@ export function Inspector({ message, focusedNum, setFocusedNum, activePaperCount
                 onClick={() => setTab('sources')}>
           引用来源 <span className="num">{message ? ((SOURCES_BY_KEY[message.sourcesKey] || message.sources || []).length) : 0}</span>
         </button>
-        <button className={'inspector-tab ' + (tab === 'evals' ? 'active' : '')}
-                onClick={() => setTab('evals')}>评估</button>
       </div>
       <div className="inspector-body">
         {tab === 'trace' && busy && liveTrace && liveTrace.length > 0 && (
@@ -335,7 +360,6 @@ export function Inspector({ message, focusedNum, setFocusedNum, activePaperCount
         )}
         {tab === 'trace' && !busy && message && <AgentTraceView message={message} />}
         {tab === 'sources' && <SourcesView message={message} focusedNum={focusedNum} setFocusedNum={setFocusedNum} />}
-        {tab === 'evals' && <EvalView activePaperCount={activePaperCount} />}
       </div>
     </aside>
   );
