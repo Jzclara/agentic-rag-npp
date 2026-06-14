@@ -101,6 +101,9 @@ export function Message({ m, onCiteClick, onOpenInspector }) {
         <span className="timing">
           {(m.timing.totalMs / 1000).toFixed(2)}s · {m.timing.tokens} tokens · {m.trace.nodes.length} 步
         </span>
+        {m.timing.cached && (
+          <span className="cache-badge" title="命中 Redis 缓存，跳过检索与 LLM 调用">⚡ 缓存命中</span>
+        )}
       </div>
 
       <TraceSummary trace={m.trace} onOpenInspector={() => onOpenInspector(m)} />

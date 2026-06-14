@@ -178,7 +178,7 @@ export default function App() {
               role: 'assistant',
               _userText: text,
               standalone: text,
-              timing: { totalMs: evt.totalMs, tokens: evt.tokens },
+              timing: { totalMs: evt.totalMs, tokens: evt.tokens, cached: evt.cached || false },
               trace: { status: 'complete', retries: evt.retries, grade: 'relevant', nodes: traceNodes },
               answer: answerParts,
               sources,

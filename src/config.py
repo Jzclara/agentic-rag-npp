@@ -62,3 +62,8 @@ CHILD_CHUNK_OVERLAP = int(os.getenv("CHILD_CHUNK_OVERLAP", "50"))
 BM25_TOP_K = int(os.getenv("BM25_TOP_K", "10"))
 # RRF 合并公式中的常数 k，用于压平排名差距，通常取 60
 RRF_K = int(os.getenv("RRF_K", "60"))
+
+# Redis 缓存配置（阶段 ③）
+# 容器里连服务名 redis，本地默认连 localhost。CACHE_TTL 为答案缓存过期秒数（默认 1 小时）。
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+CACHE_TTL = int(os.getenv("CACHE_TTL", "3600"))

@@ -21,6 +21,7 @@ from pathlib import Path
 from src.graph.app import build_graph
 from src.evals.run_ragas import setup_ragas_llm
 from src import db
+from src import cache
 
 app = FastAPI()
 
@@ -256,6 +257,35 @@ def chat(req: ChatRequest):
 
     def generate():
         # ═══════════════════════════════════════════
+        # 第 0 步：查缓存（Redis）
+        # ═══════════════════════════════════════════
+        # 只缓存「独立问题」：history 为空时才读写缓存。
+        # 带对话历史的追问，答案依赖上下文、几乎不会命中，一律走实时流程，避免返回错答案。
+        cache_key = None
+        if not req.history:
+            cache_key = cache.make_key(req.question, req.selected_paper_ids)
+            cached = cache.get_cached(cache_key)
+            if cached is not None:
+                # 命中：直接重放最终结果（A+ 方案），明确标记 cached，跳过整条图。
+                cache_start = time.time()
+                yield sse_event({
+                    "type": "answer",
+                    "parts": cached["parts"],
+                    "sources": cached["sources"],
+                })
+                if cached.get("eval") is not None:
+                    yield sse_event({"type": "eval", **cached["eval"]})
+                yield sse_event({
+                    "type": "done",
+                    "totalMs": int((time.time() - cache_start) * 1000),
+                    "tokens": 0,
+                    "retries": 0,
+                    "cached": True,
+                })
+                print(f"  [cache] 命中，跳过 RAG 流程：{req.question}")
+                return
+
+        # ═══════════════════════════════════════════
         # 第 1 步：构造初始 AgentState
         # ═══════════════════════════════════════════
         # 这就是 graph/state.py 里定义的那个 TypedDict。
@@ -357,27 +387,38 @@ def chat(req: ChatRequest):
         # ═══════════════════════════════════════════
         cited_nums = set(map(int, re.findall(r'\[(\d+)\]', final_answer)))
         cited_sources = [s for s in final_sources if s["n"] in cited_nums]
+        answer_parts = parse_answer_to_parts(final_answer)
 
         yield sse_event({
             "type": "answer",
-            "parts": parse_answer_to_parts(final_answer),
+            "parts": answer_parts,
             "sources": cited_sources,
         })
 
         # ═══════════════════════════════════════════
         # 第 4 步：实时评估本次回答
         # ═══════════════════════════════════════════
+        eval_payload = None
         try:
             final_contexts = [s["quote"] for s in final_sources] if final_sources else []
             scores = eval_single_query(req.question, final_answer, final_contexts)
-            yield sse_event({
-                "type": "eval",
+            eval_payload = {
                 "faithfulness": round(scores["faithfulness"], 3),
                 "answer_relevancy": round(scores["answer_relevancy"], 3),
-            })
+            }
+            yield sse_event({"type": "eval", **eval_payload})
         except Exception as e:
             print(f"实时评估失败: {e}")
             traceback.print_exc()
+
+        # ── 写缓存 ──
+        # 跑完完整流程后，把最终结果存进 Redis（带 TTL）。下次同样的独立问题直接命中。
+        if cache_key is not None:
+            cache.set_cached(cache_key, {
+                "parts": answer_parts,
+                "sources": cited_sources,
+                "eval": eval_payload,
+            })
 
         # ═══════════════════════════════════════════
         # 第 5 步：推送完成信号

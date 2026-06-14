@@ -26,6 +26,22 @@ services:
       retries: 10
     restart: unless-stopped
 
+  # ===== 缓存：Redis（重复问题秒回，省 LLM 调用）=====
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]   # AOF 持久化，重启不丢缓存
+    volumes:
+      - redisdata:/data            # 命名卷持久化
+    ports:
+      - "6379:6379"                # 暴露到本机，方便用 redis-cli 调试
+    healthcheck:
+      # 用 redis-cli ping 探活，返回 PONG 才算健康，api 才启动。
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   # ===== 后端：FastAPI + LangGraph =====
   api:
     build: .                      # 用当前目录的 Dockerfile 构建
@@ -35,6 +51,8 @@ services:
     environment:
       # 容器内连库用服务名 db 当主机名（compose 自带 DNS）。
       - DATABASE_URL=postgresql://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-rag_pwd}@db:5432/${POSTGRES_DB:-ragdb}
+      # 容器内连缓存用服务名 redis 当主机名。
+      - REDIS_URL=redis://redis:6379/0
     volumes:
       # 挂载：模型 / 索引 / 数据 / 结果，留在本机，不进镜像
       - ./.cache:/app/.cache
@@ -46,6 +64,8 @@ services:
     depends_on:
       db:
         condition: service_healthy   # 等 db「健康」后再启动 api
+      redis:
+        condition: service_healthy   # 等 redis「健康」后再启动 api
     restart: unless-stopped
     # 健康检查：容器内探测 /api/health，通了才算「健康」。
     # 用 python 自带的 urllib（slim 镜像没有 curl）。
@@ -70,3 +90,4 @@ services:
 # 命名卷：PostgreSQL 数据落在这里，docker compose down 不会丢，down -v 才清空。
 volumes:
   pgdata:
+  redisdata:   # Redis AOF 持久化数据

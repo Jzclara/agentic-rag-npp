@@ -39,3 +39,6 @@ python-multipart
 # Stage 5: PostgreSQL 持久化（psycopg3 驱动 + 连接池）
 psycopg[binary]==3.2.10
 psycopg-pool==3.2.6
+
+# Stage 6: Redis 缓存（重复问题秒回，省 LLM 调用）
+redis==5.2.1
